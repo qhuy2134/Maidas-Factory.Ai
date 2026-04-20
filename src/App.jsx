@@ -10,18 +10,13 @@ function App() {
   const isPanning = useRef(false);
   const startPan = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
 
-  // THUẬT TOÁN ĐỈNH CAO: Đo đạc và ép giới hạn Zoom
   const getDynamicMinScale = () => {
     if (!containerRef.current || !contentRef.current) return 1;
     const container = containerRef.current.getBoundingClientRect();
     const baseWidth = contentRef.current.offsetWidth;
     const baseHeight = contentRef.current.offsetHeight;
-
-    // Tính tỷ lệ cần thiết để map KHÔNG BAO GIỜ nhỏ hơn chiều ngang và chiều dọc màn hình
     const scaleToFitWidth = container.width / baseWidth;
     const scaleToFitHeight = container.height / baseHeight;
-
-    // Lấy số lớn hơn để đảm bảo map luôn che lấp kín mít màn hình, không lòi ra 1 pixel vũ trụ nào
     return Math.max(scaleToFitWidth, scaleToFitHeight);
   };
 
@@ -31,8 +26,6 @@ function App() {
     const contentWidth = contentRef.current.offsetWidth * newScale;
     const contentHeight = contentRef.current.offsetHeight * newScale;
 
-    // Vì ta đã ép Dynamic Min Scale, map sẽ luôn luôn >= màn hình. 
-    // Giờ chỉ cần xây 4 bức tường sắt ở 4 mép là xong!
     const minX = containerRect.width - contentWidth;
     const clampedX = Math.max(minX, Math.min(0, newX));
 
@@ -55,7 +48,6 @@ function App() {
     if (!isPanning.current) return;
     const dx = e.clientX - startPan.current.x;
     const dy = e.clientY - startPan.current.y;
-    
     const { x, y } = clampPosition(startPan.current.tx + dx, startPan.current.ty + dy, transform.scale);
     setTransform(prev => ({ ...prev, x, y }));
   };
@@ -76,11 +68,8 @@ function App() {
     
     const oldScale = transform.scale;
     let newScale = oldScale + delta;
-
-    // BÙA CHÚ TỐI THƯỢNG: Ép map không được thu nhỏ quá mức tính toán
     const minScale = getDynamicMinScale();
     newScale = Math.max(minScale, Math.min(newScale, 4)); 
-    
     if (newScale === oldScale) return;
 
     const rect = containerRef.current.getBoundingClientRect();
@@ -103,7 +92,6 @@ function App() {
   }, [transform]);
 
   useEffect(() => {
-    // Tự động kiểm tra và khóa góc ngay lúc mới load web hoặc khi ông bấm '+' thêm ô lưới
     const enforceBounds = () => {
       setTransform(prev => {
         const minScale = getDynamicMinScale();
@@ -112,13 +100,10 @@ function App() {
         return { x: clamped.x, y: clamped.y, scale: safeScale };
       });
     };
-    
     window.addEventListener('resize', enforceBounds);
     const resizeObserver = new ResizeObserver(() => enforceBounds());
     if (contentRef.current) resizeObserver.observe(contentRef.current);
-
-    enforceBounds(); // Chạy lệnh khóa ngay vòng đầu
-
+    enforceBounds(); 
     return () => {
       window.removeEventListener('resize', enforceBounds);
       resizeObserver.disconnect();
@@ -143,7 +128,8 @@ function App() {
             willChange: 'transform'
           }}
         >
-          <MaidasMap scale={transform.scale} />
+          {/* ĐÂY LÀ DÒNG ĂN TIỀN: Truyền full thông số camera sang Map */}
+          <MaidasMap camera={transform} />
         </div>
       </div>
     </div>
