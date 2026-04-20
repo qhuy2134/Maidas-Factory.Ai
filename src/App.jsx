@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import Background from './components/Background';
 import MaidasMap from './components/MaidasMap';
+import ToolBar from './components/ToolBar';
 
 function App() {
   const containerRef = useRef(null);
@@ -111,27 +112,34 @@ function App() {
   }, []);
 
   return (
-    <div style={{ width: '100vw', height: '100vh', position: 'relative', overflow: 'hidden' }}>
-      <Background />
-      <div 
-        ref={containerRef}
-        style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
-        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
-      >
+    // Đổi bố cục thành Flexbox chiều dọc
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0f0f0f', overflow: 'hidden' }}>
+      
+      {/* ======== THANH TOOLBAR ======== */}
+      <ToolBar>
+      </ToolBar>
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <Background />
         <div 
-          ref={contentRef}
-          style={{ 
-            width: 'max-content', height: 'max-content',
-            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-            transformOrigin: '0 0',
-            willChange: 'transform'
-          }}
+          ref={containerRef}
+          style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}
+          onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
         >
-          {/* ĐÂY LÀ DÒNG ĂN TIỀN: Truyền full thông số camera sang Map */}
-          <MaidasMap camera={transform} />
+          <div 
+            ref={contentRef}
+            style={{ 
+              width: 'max-content', height: 'max-content',
+              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+              transformOrigin: '0 0',
+              willChange: 'transform'
+            }}
+          >
+            <MaidasMap camera={transform} />
+          </div>
         </div>
       </div>
+      
     </div>
   );
 }

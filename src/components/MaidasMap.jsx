@@ -142,18 +142,16 @@ const MaidasMap = ({ camera = { x: 0, y: 0, scale: 1 } }) => {
                 />
               </div>
 
-              {/* Lưới Grid chính */}
+  
               {colLabels.map((colLabel) => (<div key={`cell-${rowLabel}-${colLabel}`} className="maidas-cell" />))}
-              
-              {/* Đóng khung đuôi hàng */}
+
               <div style={{ backgroundColor: '#1a1a1a', borderLeft: '1px solid rgba(255, 255, 255, 0.1)' }} />
             </React.Fragment>
           );
         })}
 
         <div onClick={() => setNumRows(r => r + 1)} className="maidas-header" style={{ ...rowStyle, borderRight: '1px solid rgba(255, 255, 255, 0.4)', cursor: 'pointer', fontSize: '20px', color: 'rgba(255,255,255,0.6)' }}>+</div>
-        
-        {/* Đóng khung đuôi cột */}
+
         {colLabels.map((colLabel) => (<div key={`footer-${colLabel}`} style={{ backgroundColor: '#1a1a1a', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }} />))}
         <div style={{ backgroundColor: '#1a1a1a' }} />
 
