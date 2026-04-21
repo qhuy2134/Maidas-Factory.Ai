@@ -2,341 +2,294 @@ import React, { useRef, useState, useEffect } from 'react';
 import Background from '../components/Background';
 import MaidasMap from '../components/MaidasMap';
 import ToolBar from '../components/ToolBar';
-import { maidasTools } from '../tools/index';
+import InteractiveTab from '../components/InteractiveTab';
+import FloatingWindows from '../components/FloatingWindows';
+import { maidasTools } from '../Tools/index';
 
-const ToolButton = ({ label, isActive, onClick }) => (
-  <button 
-    onClick={onClick}
-    style={{
-      backgroundColor: isActive ? 'rgba(138, 180, 248, 0.15)' : 'transparent',
-      border: isActive ? '1px solid #8ab4f8' : '1px solid rgba(255,255,255,0.1)',
-      color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
-      padding: '6px 15px', borderRadius: '4px', cursor: 'pointer',
-      display: 'flex', alignItems: 'center', fontSize: '10px',
-      fontWeight: 'bold', letterSpacing: '1px', transition: 'all 0.2s',
-      outline: 'none', flexShrink: 0
-    }}
-    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)' }}
-    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent' }}
-  >
+const ToolButton = ({ label, isActive, onClick, image }) => (
+  <button onClick={onClick} style={{ backgroundColor: isActive ? 'rgba(138, 180, 248, 0.15)' : 'transparent', border: isActive ? '1px solid #8ab4f8' : '1px solid rgba(255,255,255,0.1)', color: isActive ? '#fff' : 'rgba(255,255,255,0.5)', padding: '6px 15px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', fontWeight: 'bold', letterSpacing: '1px', transition: 'all 0.2s', outline: 'none', flexShrink: 0 }}>
+    {image && <img src={image} alt={label} style={{ width: '16px', height: '16px', objectFit: 'contain' }} />}
     {label}
   </button>
 );
 
+// 🔥 BỘ PHẬN VẼ DÂY ĐIỆN ĐƯỢC NÂNG CẤP (CHO PHÉP BẤM CHỌN DÂY)
+const CablesLayer = ({ cables, activeCable, portRefs, contentRef, transform, mode, selectedCableId, setSelectedCableId }) => {
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    let id; const loop = () => { setTick(t => t + 1); id = requestAnimationFrame(loop); };
+    loop(); return () => cancelAnimationFrame(id);
+  }, [mode]);
+
+  if (mode !== 'edit') return null;
+
+  const getMapPos = (nodeId, portId) => {
+    const el = portRefs.current[`${nodeId}_${portId}`];
+    if (!el || !contentRef.current) return { x: 0, y: 0 };
+    const r = el.getBoundingClientRect(); const p = contentRef.current.getBoundingClientRect();
+    return { x: (r.left + r.width / 2 - p.left) / transform.scale, y: (r.top + r.height / 2 - p.top) / transform.scale };
+  };
+
+  const getOffset = (portId) => {
+    const DIST = 80;
+    if (portId === 'topRight') return { dx: DIST, dy: -DIST };
+    if (portId === 'bottomRight') return { dx: DIST, dy: DIST };
+    if (portId === 'bottomLeft') return { dx: -DIST, dy: DIST };
+    if (portId === 'topLeft') return { dx: -DIST, dy: -DIST };
+    return { dx: 0, dy: 0 };
+  };
+
+  const drawBezier = (x1, y1, x2, y2, port1, port2) => {
+    const o1 = getOffset(port1); const o2 = port2 ? getOffset(port2) : { dx: 0, dy: 0 };
+    return `M ${x1} ${y1} C ${x1 + o1.dx} ${y1 + o1.dy}, ${x2 + o2.dx} ${y2 + o2.dy}, ${x2} ${y2}`;
+  };
+
+  return (
+    <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15, overflow: 'visible' }}>
+      <defs>
+        {cables.map(c => {
+          const p1 = getMapPos(c.fromNode, c.fromPort); const p2 = getMapPos(c.toNode, c.toPort);
+          return (
+            <linearGradient key={`grad_${c.id}`} id={`grad_${c.id}`} gradientUnits="userSpaceOnUse" x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}>
+              <stop offset="0%" stopColor="#F44336" />
+              <stop offset="100%" stopColor="#4CAF50" />
+            </linearGradient>
+          )
+        })}
+      </defs>
+
+      {/* RENDER CÁC SỢI CÁP */}
+      {cables.map(c => {
+        const p1 = getMapPos(c.fromNode, c.fromPort); const p2 = getMapPos(c.toNode, c.toPort);
+        const d = drawBezier(p1.x, p1.y, p2.x, p2.y, c.fromPort, c.toPort);
+        const isSelected = selectedCableId === c.id;
+
+        return (
+          // Bọc pointerEvents: 'auto' để có thể bấm vào cọng dây
+          <g key={c.id} onClick={(e) => { e.stopPropagation(); setSelectedCableId(c.id); }} style={{ pointerEvents: 'auto', cursor: 'pointer' }}>
+            {/* Lớp Hitbox trong suốt (Dày 15px để dễ bấm trúng) */}
+            <path d={d} fill="none" stroke="transparent" strokeWidth="15" />
+            {/* Lớp hiển thị thật sự */}
+            <path d={d} fill="none" stroke={`url(#grad_${c.id})`} strokeWidth={isSelected ? "6" : "3"} style={{ filter: isSelected ? 'drop-shadow(0 0 6px #fff)' : 'none', transition: 'stroke-width 0.2s' }} />
+          </g>
+        );
+      })}
+
+      {/* RENDER DÂY ĐANG KÉO */}
+      {activeCable && (
+        <path d={drawBezier(getMapPos(activeCable.fromNode, activeCable.fromPort).x, getMapPos(activeCable.fromNode, activeCable.fromPort).y, activeCable.currentX, activeCable.currentY, activeCable.fromPort, null)} fill="none" stroke={activeCable.color} strokeWidth="3" strokeDasharray="6,4" />
+      )}
+    </svg>
+  );
+};
+
 function Workspace() {
-  const containerRef = useRef(null);
-  const contentRef = useRef(null);
-  const tabsContainerRef = useRef(null); // Ref dùng để cuộn thanh Tabs
-
-  const [activeTool, setActiveTool] = useState('cursor'); 
-  const [activeColor, setActiveColor] = useState('#8ab4f8'); 
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const isPanning = useRef(false);
-  const startPan = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
-
-  // ==========================================
-  // HỆ THỐNG TÂM TRÍ TỔ ONG (CHROME TABS)
-  // ==========================================
-  const [tabs, setTabs] = useState([]);
-  const [activeDockedTab, setActiveDockedTab] = useState(null);
-  
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(350);
-
+  const containerRef = useRef(null); const contentRef = useRef(null);
   const drag = useRef({ type: null, id: null, startX: 0, startY: 0, initX: 0, initY: 0, initW: 0, initH: 0 });
+  const isPanning = useRef(false); const startPan = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const portRefs = useRef({}); 
 
-  const getDynamicMinScale = () => {
-    if (!containerRef.current || !contentRef.current) return 1;
-    const container = containerRef.current.getBoundingClientRect();
-    const baseWidth = contentRef.current.offsetWidth;
-    const baseHeight = contentRef.current.offsetHeight;
-    return Math.max(container.width / baseWidth, container.height / baseHeight);
+  const [mode, setMode] = useState('object'); 
+  const [activeTool, setActiveTool] = useState('cursor'); 
+  const [toolPayload, setToolPayload] = useState(null); 
+  const [placedItems, setPlacedItems] = useState([]); 
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [tabs, setTabs] = useState([]); const [activeDockedTab, setActiveDockedTab] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); const [sidebarWidth, setSidebarWidth] = useState(350);
+  const [toolStates, setToolStates] = useState({});
+  const [selection, setSelection] = useState({ start: null, end: null, isSelecting: false });
+  const [clipboard, setClipboard] = useState(null);
+  
+  const [cables, setCables] = useState([]); 
+  const [activeCable, setActiveCable] = useState(null);
+  const [selectedCableId, setSelectedCableId] = useState(null); // 🔥 LƯU DÂY ĐANG ĐƯỢC CHỌN
+
+  const getMapCoordinates = (clientX, clientY) => {
+    if (!contentRef.current) return { x: 0, y: 0 };
+    const rect = contentRef.current.getBoundingClientRect();
+    return { x: (clientX - rect.left) / transform.scale, y: (clientY - rect.top) / transform.scale };
   };
 
-  const clampPosition = (newX, newY, newScale) => {
-    if (!containerRef.current || !contentRef.current) return { x: newX, y: newY };
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const minX = containerRect.width - (contentRef.current.offsetWidth * newScale);
-    const minY = containerRect.height - (contentRef.current.offsetHeight * newScale);
-    return { x: Math.max(minX, Math.min(0, newX)), y: Math.max(minY, Math.min(0, newY)) };
-  };
+  const coreAPI = {
+    activeTool, toolPayload, placedItems, tabs, selection, mode,
+    setActiveTool: (id, payload) => { setActiveTool(id); setToolPayload(payload); },
+    addPlacedItem: (item) => setPlacedItems(prev => [...prev, item]),
+    updatePlacedItem: (id, newData) => setPlacedItems(prev => prev.map(i => i.id === id ? { ...i, data: { ...i.data, ...newData } } : i)),
+    getToolState: (toolId) => toolStates[toolId] || {},
+    setToolState: (toolId, stateObj) => setToolStates(prev => ({ ...prev, [toolId]: { ...(prev[toolId] || {}), ...stateObj } })),
+    
+    registerPort: (nodeId, portId, el) => { portRefs.current[`${nodeId}_${portId}`] = el; },
+    startCable: (e, nodeId, portId, type) => {
+      e.stopPropagation(); const color = type === 'input' ? '#4CAF50' : '#F44336';
+      const coords = getMapCoordinates(e.clientX, e.clientY);
+      setActiveCable({ fromNode: nodeId, fromPort: portId, type, color, currentX: coords.x, currentY: coords.y });
+    },
+    endCable: (nodeId, portId, type) => {
+      if (activeCable && activeCable.fromNode !== nodeId && activeCable.type !== type) {
+        const isOut = activeCable.type === 'output';
+        setCables(prev => [...prev, {
+          id: `cable_${Date.now()}`,
+          fromNode: isOut ? activeCable.fromNode : nodeId, fromPort: isOut ? activeCable.fromPort : portId,
+          toNode: isOut ? nodeId : activeCable.fromNode, toPort: isOut ? portId : activeCable.fromPort
+        }]);
+      }
+      setActiveCable(null);
+    },
+    // 🔥 API MỚI: Bẻ gãy toàn bộ dây cắm vào 1 cổng (Dùng khi đổi Port sang Trống)
+    removeConnectedCables: (nodeId, portId) => {
+      setCables(prev => prev.filter(c => !(c.fromNode === nodeId && c.fromPort === portId) && !(c.toNode === nodeId && c.toPort === portId)));
+    },
 
-  const handleGlobalMouseDown = (e) => {
-    if (e.button === 1 && e.target.closest('#map-container')) {
-      e.preventDefault();
-      isPanning.current = true;
-      startPan.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y };
-      document.body.style.cursor = 'move';
+    openToolTab: (toolId, title) => {
+      setTabs(prev => {
+        const existingIndex = prev.findIndex(t => t.toolId === toolId);
+        if (existingIndex >= 0) { const updated = [...prev]; updated[existingIndex] = { ...updated[existingIndex], isFloating: false }; setActiveDockedTab(updated[existingIndex].id); setIsSidebarOpen(true); return updated; }
+        if (prev.length >= 10) { alert("⚠️ Đã đạt giới hạn 10 Tab."); return prev; }
+        const newId = `tab_${Date.now()}`; setActiveDockedTab(newId); setIsSidebarOpen(true);
+        return [...prev, { id: newId, title, toolId, isFloating: false, isRenaming: false, x: 200, y: 150, w: 380, h: 500 }];
+      });
+    },
+    addTab: (title = 'New Tab') => {
+      setTabs(prev => {
+        if (prev.length >= 10) return prev;
+        const newId = `tab_${Date.now()}`; setActiveDockedTab(newId); setIsSidebarOpen(true);
+        return [...prev, { id: newId, title, toolId: null, isFloating: false, isRenaming: false, x: 200, y: 150, w: 350, h: 400 }];
+      });
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 🔥 XÓA CÁP ĐANG CHỌN
+      if (e.key === 'Delete' && selectedCableId) {
+        setCables(prev => prev.filter(c => c.id !== selectedCableId));
+        setSelectedCableId(null);
+        return; 
+      }
+
+      if (!selection.start || !selection.end) return;
+      const minRow = Math.min(selection.start.r, selection.end.r); const maxRow = Math.max(selection.start.r, selection.end.r);
+      const minCol = Math.min(selection.start.c, selection.end.c); const maxCol = Math.max(selection.start.c, selection.end.c);
+      const itemsInSelection = placedItems.filter(i => i.row >= minRow && i.row <= maxRow && i.col >= minCol && i.col <= maxCol);
+      
+      // XÓA RƯƠNG TRONG VÙNG CHỌN
+      if (e.key === 'Delete') { 
+        setPlacedItems(prev => prev.filter(i => !itemsInSelection.find(sel => sel.id === i.id))); 
+        // 🔥 ĐỒNG THỜI XÓA SẠCH DÂY ĐIỆN CẮM VÀO NHỮNG RƯƠNG ĐÃ XÓA
+        const deletedIds = itemsInSelection.map(i => i.id);
+        setCables(prev => prev.filter(c => !deletedIds.includes(c.fromNode) && !deletedIds.includes(c.toNode)));
+      }
+      
+      if (e.ctrlKey && e.key === 'c') { setClipboard({ items: itemsInSelection, width: maxCol - minCol + 1, height: maxRow - minRow + 1, minRow: minRow, minCol: minCol }); }
+      if (e.ctrlKey && e.key === 'v') {
+        if (clipboard && clipboard.items) {
+          const selWidth = maxCol - minCol + 1; const selHeight = maxRow - minRow + 1;
+          if (selWidth !== clipboard.width || selHeight !== clipboard.height) return alert(`⚠️ Kích thước Paste không khớp.`);
+          const newItems = clipboard.items.map((item, idx) => ({ ...item, id: Date.now() + idx + Math.random(), row: minRow + (item.row - clipboard.minRow), col: minCol + (item.col - clipboard.minCol) }));
+          setPlacedItems(prev => { const filtered = prev.filter(p => !newItems.some(n => n.row === p.row && n.col === p.col)); return [...filtered, ...newItems]; });
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown); return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selection, placedItems, clipboard, selectedCableId]);
+
+  const getDynamicMinScale = () => { if (!containerRef.current || !contentRef.current) return 1; const c = containerRef.current.getBoundingClientRect(); return Math.max(c.width / contentRef.current.offsetWidth, c.height / contentRef.current.offsetHeight); };
+  const clampPosition = (newX, newY, newScale) => { if (!containerRef.current || !contentRef.current) return { x: newX, y: newY }; const c = containerRef.current.getBoundingClientRect(); return { x: Math.max(c.width - (contentRef.current.offsetWidth * newScale), Math.min(0, newX)), y: Math.max(c.height - (contentRef.current.offsetHeight * newScale), Math.min(0, newY)) }; };
+  
+  const handleGlobalMouseDown = (e) => { 
+    setSelectedCableId(null); // Click ra ngoài là bỏ chọn cáp
+    if (e.button === 1 && e.target.closest('#map-container')) { e.preventDefault(); isPanning.current = true; startPan.current = { x: e.clientX, y: e.clientY, tx: transform.x, ty: transform.y }; document.body.style.cursor = 'move'; } 
+  };
   const handleGlobalMouseMove = (e) => {
-    if (isPanning.current) {
-      const dx = e.clientX - startPan.current.x;
-      const dy = e.clientY - startPan.current.y;
-      setTransform(prev => ({ ...prev, ...clampPosition(startPan.current.tx + dx, startPan.current.ty + dy, prev.scale) }));
-    } 
-    else if (drag.current.type === 'sidebar_resize') {
-      const newWidth = drag.current.initW + (drag.current.startX - e.clientX);
-      if (newWidth > 250 && newWidth < 800) setSidebarWidth(newWidth);
+    if (activeCable) {
+      const coords = getMapCoordinates(e.clientX, e.clientY);
+      setActiveCable(prev => ({ ...prev, currentX: coords.x, currentY: coords.y }));
     }
+    else if (isPanning.current) setTransform(prev => ({ ...prev, ...clampPosition(startPan.current.tx + (e.clientX - startPan.current.x), startPan.current.ty + (e.clientY - startPan.current.y), prev.scale) }));
+    else if (drag.current.type === 'sidebar_resize') setSidebarWidth(Math.max(250, Math.min(800, drag.current.initW + (drag.current.startX - e.clientX))));
     else if (drag.current.type === 'tab') {
-      const sidebarLeftEdge = window.innerWidth - sidebarWidth;
-      if (e.clientX < sidebarLeftEdge && isSidebarOpen) {
+      if (e.clientX < window.innerWidth - sidebarWidth && isSidebarOpen) {
         const newY = Math.max(0, e.clientY - 48 - 15);
+        const remainingDocked = tabs.filter(t => !t.isFloating && t.id !== drag.current.id);
+        if (activeDockedTab === drag.current.id) setActiveDockedTab(remainingDocked.length > 0 ? remainingDocked[remainingDocked.length - 1].id : null);
         setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, isFloating: true, x: e.clientX - 100, y: newY } : t));
         drag.current = { type: 'window_move', id: drag.current.id, startX: e.clientX, startY: e.clientY, initX: e.clientX - 100, initY: newY };
       }
     }
-    else if (drag.current.type === 'window_move') {
-      const newX = drag.current.initX + (e.clientX - drag.current.startX);
-      let newY = drag.current.initY + (e.clientY - drag.current.startY);
-      if (newY < 0) newY = 0;
-      setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, x: newX, y: newY } : t));
-    }
-    else if (drag.current.type === 'window_resize') {
-      const newW = drag.current.initW + (e.clientX - drag.current.startX);
-      const newH = drag.current.initH + (e.clientY - drag.current.startY);
-      setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, w: Math.max(250, newW), h: Math.max(150, newH) } : t));
-    }
+    else if (drag.current.type === 'window_move') setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, x: drag.current.initX + (e.clientX - drag.current.startX), y: Math.max(0, drag.current.initY + (e.clientY - drag.current.startY)) } : t));
+    else if (drag.current.type === 'window_resize') setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, w: Math.max(250, drag.current.initW + (e.clientX - drag.current.startX)), h: Math.max(150, drag.current.initH + (e.clientY - drag.current.startY)) } : t));
   };
-
+  
   const handleGlobalMouseUp = (e) => {
-    if (e.button === 1) {
-      isPanning.current = false;
-      document.body.style.cursor = 'default';
-    }
-    if (drag.current.type === 'window_move') {
-      const sidebarLeftEdge = window.innerWidth - sidebarWidth;
-      if (e.clientX >= sidebarLeftEdge - 20 && isSidebarOpen) {
-        setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, isFloating: false } : t));
-        setActiveDockedTab(drag.current.id);
-      }
-    }
-    drag.current = { type: null, id: null };
+    if (activeCable) setActiveCable(null);
+    if (isPanning.current) { isPanning.current = false; document.body.style.cursor = 'default'; }
+    if (drag.current.type === 'window_move' && e.clientX >= window.innerWidth - sidebarWidth - 20 && isSidebarOpen) { setTabs(prev => prev.map(t => t.id === drag.current.id ? { ...t, isFloating: false } : t)); setActiveDockedTab(drag.current.id); }
+    if (selection.isSelecting) setSelection(prev => ({ ...prev, isSelecting: false }));
+    drag.current.type = null;
   };
 
   const handleWheel = (e) => {
-    e.preventDefault(); 
-    if (!containerRef.current || !contentRef.current) return;
-    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-    const oldScale = transform.scale;
-    let newScale = Math.max(getDynamicMinScale(), Math.min(oldScale + delta, 4)); 
-    if (newScale === oldScale) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    e.preventDefault(); if (!containerRef.current || !contentRef.current) return;
+    const zoomSensitivity = 0.002; const oldScale = transform.scale;
+    const newScale = Math.max(getDynamicMinScale(), Math.min(oldScale * Math.exp(-e.deltaY * zoomSensitivity), 4));
+    if (newScale === oldScale) return; 
+    const r = containerRef.current.getBoundingClientRect();
+    const mouseX = e.clientX - r.left; const mouseY = e.clientY - r.top;
     const newX = mouseX - (mouseX - transform.x) * (newScale / oldScale);
     const newY = mouseY - (mouseY - transform.y) * (newScale / oldScale);
     setTransform({ x: clampPosition(newX, newY, newScale).x, y: clampPosition(newX, newY, newScale).y, scale: newScale });
   };
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (el) {
-      el.addEventListener('wheel', handleWheel, { passive: false });
-      return () => el.removeEventListener('wheel', handleWheel);
-    }
-  }, [transform]);
-
-  const handleTabScroll = (e) => {
-    if (tabsContainerRef.current) {
-      tabsContainerRef.current.scrollLeft += e.deltaY;
-    }
-  };
-
-  const addTab = () => {
-    if (tabs.length >= 10) {
-      alert("⚠️ Đã đạt giới hạn tối đa 10 Tab. Vui lòng xóa bớt!");
-      return;
-    }
-    const newId = `tab_${Date.now()}`;
-    // Đã đổi tên mặc định thành "New Tab"
-    setTabs([...tabs, { id: newId, title: `New Tab`, isFloating: false, isRenaming: false, x: 200, y: 150, w: 350, h: 400 }]);
-    setActiveDockedTab(newId);
-    setIsSidebarOpen(true);
-    
-
-    setTimeout(() => {
-      if (tabsContainerRef.current) {
-        tabsContainerRef.current.scrollLeft = tabsContainerRef.current.scrollWidth;
-      }
-    }, 50);
-  };
-
-  const handleRename = (id, newTitle) => {
-    const safeTitle = newTitle.trim() === '' ? 'Unnamed Tab' : newTitle;
-    setTabs(prev => prev.map(t => t.id === id ? { ...t, isRenaming: false, title: safeTitle } : t));
-  };
-
-  const removeTab = (e, id) => {
-    e.stopPropagation();
-    const updatedTabs = tabs.filter(t => t.id !== id);
-    setTabs(updatedTabs);
-    if (activeDockedTab === id) {
-      const dockedTabs = updatedTabs.filter(t => !t.isFloating);
-      setActiveDockedTab(dockedTabs.length > 0 ? dockedTabs[dockedTabs.length - 1].id : null);
-    }
-  };
-
-  const dockTabManually = (e, id) => {
-    e.stopPropagation();
-    setTabs(prev => prev.map(t => t.id === id ? { ...t, isFloating: false } : t));
-    setActiveDockedTab(id);
-    setIsSidebarOpen(true);
-  };
+  
+  useEffect(() => { const el = containerRef.current; if (el) { el.addEventListener('wheel', handleWheel, { passive: false }); return () => el.removeEventListener('wheel', handleWheel); } }, [transform]);
 
   return (
-    <div 
-      style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0f0f0f', overflow: 'hidden' }}
-      onMouseDown={handleGlobalMouseDown} onMouseMove={handleGlobalMouseMove} 
-      onMouseUp={handleGlobalMouseUp} onMouseLeave={handleGlobalMouseUp}
-    >
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0f0f0f', overflow: 'hidden' }} onMouseDown={handleGlobalMouseDown} onMouseMove={handleGlobalMouseMove} onMouseUp={handleGlobalMouseUp} onMouseLeave={handleGlobalMouseUp}>
       <ToolBar>
-        {maidasTools.map(tool => (
-          <ToolButton key={tool.id} label={tool.label} isActive={activeTool === tool.id} onClick={() => setActiveTool(tool.id)} />
-        ))}
-        <div style={{ width: '1px', height: '20px', backgroundColor: 'rgba(255,255,255,0.1)', margin: '0 10px', flexShrink: 0 }} />
+        <button onClick={() => setMode(mode === 'object' ? 'edit' : 'object')} style={{ backgroundColor: mode === 'object' ? '#34a853' : '#ea4335', color: '#fff', border: 'none', padding: '6px 20px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px', letterSpacing: '1px', flexShrink: 0, marginRight: '10px' }}>
+          {mode === 'object' ? '⬛ OBJECT MODE' : '⚙️ EDIT MODE'}
+        </button>
+        <div style={{ width: '1px', height: '20px', backgroundColor: 'rgba(255,255,255,0.2)', margin: '0 15px 0 5px', flexShrink: 0 }} />
+        {maidasTools.map(tool => <ToolButton key={tool.id} label={tool.label} image={tool.image} isActive={activeTool === tool.id || activeTool.startsWith(tool.id)} onClick={() => tool.onToolbarClick && tool.onToolbarClick(coreAPI)} />)}
       </ToolBar>
 
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <Background />
-
         <div id="map-container" ref={containerRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0, zIndex: 1 }}>
           <div ref={contentRef} style={{ width: 'max-content', height: 'max-content', transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`, transformOrigin: '0 0', willChange: 'transform' }}>
-            <MaidasMap camera={transform} />
-          </div>
-        </div>
 
-        <div style={{
-          position: 'absolute', top: 0, right: 0, height: '100%', width: `${sidebarWidth}px`,
-          backgroundColor: 'rgba(20, 20, 20, 0.95)', backdropFilter: 'blur(10px)',
-          borderLeft: '1px solid rgba(255,255,255,0.1)',
-          transform: isSidebarOpen ? 'translateX(0)' : `translateX(100%)`,
-          transition: drag.current.type === 'sidebar_resize' ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          zIndex: 900, display: 'flex', flexDirection: 'column',
-          boxShadow: isSidebarOpen ? '-5px 0 20px rgba(0,0,0,0.5)' : 'none'
-        }}>
-          
-          <div 
-            onMouseDown={(e) => { drag.current = { type: 'sidebar_resize', startX: e.clientX, initW: sidebarWidth }; e.stopPropagation(); }}
-            style={{ position: 'absolute', left: '-3px', top: 0, width: '6px', height: '100%', cursor: 'col-resize', zIndex: 10 }}
-          />
-
-          <div
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            style={{
-              position: 'absolute', top: '50%', left: '-24px', transform: 'translateY(-50%)',
-              width: '24px', height: '60px', backgroundColor: 'rgba(20, 20, 20, 0.95)',
-              border: '1px solid rgba(255,255,255,0.2)', borderRight: 'none',
-              borderRadius: '8px 0 0 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', color: 'rgba(255,255,255,0.6)', boxShadow: '-2px 0 5px rgba(0,0,0,0.2)'
-            }}
-          >
-            <span style={{ fontSize: '10px' }}>{isSidebarOpen ? '▶' : '◀'}</span>
-          </div>
-
-          <div style={{ padding: '10px 15px', color: '#ffffff', fontWeight: 'bold', fontSize: '10px', letterSpacing: '2px', borderBottom: '1px solid #222' }}>
-            INTERACTIVE TAB
-          </div>
-
-          <div 
-            ref={tabsContainerRef}
-            onWheel={handleTabScroll}
-            style={{ 
-              display: 'flex', backgroundColor: '#111', borderBottom: '1px solid rgba(255,255,255,0.05)', 
-              overflowX: 'auto', minHeight: '35px', scrollbarWidth: 'none', msOverflowStyle: 'none', scrollBehavior: 'smooth' 
-            }}
-          >
-            <style>{`div::-webkit-scrollbar { display: none; }`}</style>
-            
-            {tabs.filter(t => !t.isFloating).map(t => (
-              <div 
-                key={t.id}
-                onMouseDown={(e) => { if (e.button === 0 && !e.target.closest('.close-btn') && !t.isRenaming) { drag.current = { type: 'tab', id: t.id, startX: e.clientX, startY: e.clientY }; } }}
-                onDoubleClick={() => setTabs(prev => prev.map(tab => tab.id === t.id ? { ...tab, isRenaming: true } : tab))}
-                onClick={() => setActiveDockedTab(t.id)}
-                style={{
-                  padding: '6px 10px', cursor: 'grab', userSelect: 'none',
-                  backgroundColor: activeDockedTab === t.id ? '#222' : 'transparent',
-                  borderRight: '1px solid #222',
-                  borderTop: activeDockedTab === t.id ? '2px solid #8ab4f8' : '2px solid transparent',
-                  color: activeDockedTab === t.id ? '#fff' : 'rgba(255,255,255,0.5)',
-                  fontSize: '11px', fontWeight: 'bold',
-                  flexShrink: 0, width: '110px', // GIỮ FORM: Không co giãn, luôn rộng 110px
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '5px'
-                }}
-              >
-                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                  {t.isRenaming ? (
-                    <input 
-                      autoFocus defaultValue={t.title}
-                      onBlur={(e) => handleRename(t.id, e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(t.id, e.target.value) }}
-                      style={{ background: '#000', color: '#fff', border: '1px solid #8ab4f8', outline: 'none', width: '100%', fontSize: '11px' }}
-                    />
-                  ) : t.title}
-                </div>
-                <span className="close-btn" onClick={(e) => removeTab(e, t.id)} style={{ cursor: 'pointer', color: '#ffffff', padding: '2px', fontSize: '12px' }} title="Close">✖</span>
-              </div>
-            ))}
-
-            <div onClick={addTab} style={{ padding: '8px 12px', cursor: 'pointer', color: '#8ab4f8', fontWeight: 'bold', fontSize: '14px', flexShrink: 0 }}>+</div>
-          </div>
-
-          <div style={{ flex: 1, padding: '20px', color: '#ccc', backgroundColor: '#1a1a1a', overflowY: 'auto' }}>
-
-          </div>
-        </div>
-
-        {tabs.filter(t => t.isFloating).map(t => (
-          <div 
-            key={t.id}
-            style={{
-              position: 'absolute', left: t.x, top: t.y, width: t.w, height: t.h,
-              backgroundColor: 'rgba(20, 20, 20, 0.95)', border: '1px solid #444',
-              borderRadius: '6px', zIndex: 1000, display: 'flex', flexDirection: 'column',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.5)', overflow: 'hidden'
-            }}
-          >
-            <div 
-              onMouseDown={(e) => { if (e.button === 0 && !e.target.closest('.win-btn') && !t.isRenaming) { drag.current = { type: 'window_move', id: t.id, startX: e.clientX, startY: e.clientY, initX: t.x, initY: t.y }; e.stopPropagation(); } }}
-              onDoubleClick={() => setTabs(prev => prev.map(tab => tab.id === t.id ? { ...tab, isRenaming: true } : tab))}
-              style={{ 
-                height: '32px', width: '100%', backgroundColor: '#2a2a2a', cursor: 'move', 
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                borderBottom: '1px solid #111', padding: '0 10px', boxSizing: 'border-box',
-                color: '#8ab4f8', fontSize: '11px', fontWeight: 'bold'
+            <MaidasMap 
+              camera={transform} activeTool={activeTool} placedItems={placedItems} selection={selection} setSelection={setSelection} mode={mode} coreAPI={coreAPI}
+              onCellClick={(r, c) => maidasTools.forEach(tool => tool.onMapClick && tool.onMapClick(coreAPI, r, c))}
+              onItemClick={(item) => {
+                if (item.toolId === 'prompt_sphere') { coreAPI.openToolTab('prompt_setting', 'Prompt Setting'); coreAPI.setToolState('prompt_setting', { selectedItem: item }); }
               }}
-            >
-              <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '10px' }}>
-                {t.isRenaming ? (
-                  <input 
-                    autoFocus defaultValue={t.title}
-                    onBlur={(e) => handleRename(t.id, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleRename(t.id, e.target.value) }}
-                    style={{ background: '#000', color: '#fff', border: '1px solid #8ab4f8', outline: 'none', width: '90%', fontSize: '11px' }}
-                  />
-                ) : t.title}
-              </div>
-
-              <div className="win-btn" style={{ display: 'flex', gap: '10px', cursor: 'default' }}>
-                <span onClick={(e) => dockTabManually(e, t.id)} style={{ cursor: 'pointer', color: '#aaa', fontSize: '14px' }} title="Gắn lại vào Sidebar">-</span>
-                <span onClick={(e) => removeTab(e, t.id)} style={{ cursor: 'pointer', color: '#ffffff', fontSize: '14px' }} title="Đóng">✖</span>
-              </div>
-            </div>
-
-            <div style={{ flex: 1, padding: '15px', color: '#eee', overflow: 'hidden' }}>
-               {/* TRỐNG */}
-            </div>
-
-            <div 
-              onMouseDown={(e) => { if (e.button === 0) { drag.current = { type: 'window_resize', id: t.id, startX: e.clientX, startY: e.clientY, initW: t.w, initH: t.h }; e.stopPropagation(); } }}
-              style={{ position: 'absolute', bottom: 0, right: 0, width: '15px', height: '15px', cursor: 'nwse-resize', background: 'linear-gradient(135deg, transparent 50%, #555 50%)' }}
+              onCellDrop={(row, col, dragData) => {
+                if (dragData && dragData.type === 'tool_item') { const isOccupied = placedItems.some(i => i.row === row && i.col === col); if (!isOccupied) { coreAPI.addPlacedItem({ id: Date.now(), toolId: dragData.toolId, row, col, data: dragData.data }); coreAPI.setToolState(dragData.toolId, { extractedPrompt: null }); } }
+                else if (dragData && dragData.type === 'move_item') { const isOccupied = placedItems.some(i => i.row === row && i.col === col); if (!isOccupied) setPlacedItems(prev => prev.map(i => i.id === dragData.id ? { ...i, row, col } : i)); }
+                else if (dragData && dragData.type === 'move_selection') {
+                  const rOffset = row - dragData.startRow; const cOffset = col - dragData.startCol;
+                  const selMinRow = Math.min(selection.start.r, selection.end.r); const selMaxRow = Math.max(selection.start.r, selection.end.r);
+                  const selMinCol = Math.min(selection.start.c, selection.end.c); const selMaxCol = Math.max(selection.start.c, selection.end.c);
+                  setPlacedItems(prev => {
+                    const movingItems = prev.filter(i => i.row >= selMinRow && i.row <= selMaxRow && i.col >= selMinCol && i.col <= selMaxCol);
+                    const movingIds = movingItems.map(i => i.id);
+                    const movedItems = movingItems.map(i => ({ ...i, row: i.row + rOffset, col: i.col + cOffset }));
+                    const remainingItems = prev.filter(i => !movingIds.includes(i.id) && !movedItems.some(m => m.row === i.row && m.col === i.col));
+                    return [...remainingItems, ...movedItems];
+                  });
+                  setSelection(prev => ({ ...prev, start: { r: prev.start.r + rOffset, c: prev.start.c + cOffset }, end: { r: prev.end.r + rOffset, c: prev.end.c + cOffset } }));
+                }
+              }} 
             />
-          </div>
-        ))}
+            {/* RENDER CÁP QUANG */}
+            <CablesLayer cables={cables} activeCable={activeCable} portRefs={portRefs} contentRef={contentRef} transform={transform} mode={mode} selectedCableId={selectedCableId} setSelectedCableId={setSelectedCableId} />
 
+          </div>
+        </div>
+        <InteractiveTab tabs={tabs} activeDockedTab={activeDockedTab} setActiveDockedTab={setActiveDockedTab} isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} sidebarWidth={sidebarWidth} setSidebarWidth={setSidebarWidth} dragRef={drag} coreAPI={coreAPI} maidasTools={maidasTools} removeTab={(e, id) => { e.stopPropagation(); setTabs(prev => { const updated = prev.filter(t => t.id !== id); if (activeDockedTab === id) setActiveDockedTab(updated.filter(t => !t.isFloating).slice(-1)[0]?.id || null); return updated; }); }} handleRename={(id, val, rename) => setTabs(prev => prev.map(t => t.id === id ? { ...t, isRenaming: rename, title: val || t.title } : t))} />
+        <FloatingWindows tabs={tabs} dragRef={drag} coreAPI={coreAPI} maidasTools={maidasTools} dockTabManually={(e, id) => { setTabs(prev => prev.map(t => t.id === id ? { ...t, isFloating: false } : t)); setActiveDockedTab(id); setIsSidebarOpen(true); }} removeTab={(e, id) => setTabs(prev => prev.filter(t => t.id !== id))} handleRename={(id, val, rename) => setTabs(prev => prev.map(t => t.id === id ? { ...t, isRenaming: rename, title: val || t.title } : t))} />
       </div>
     </div>
   );
