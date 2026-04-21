@@ -9,6 +9,7 @@ const ProjectArchive = () => {
   
   const navigate = useNavigate(); 
 
+  // Hàm chọn Thư mục (Dành cho Addon)
   const connectStorage = async () => {
     try {
       const dirHandle = await window.showDirectoryPicker();
@@ -49,6 +50,34 @@ const ProjectArchive = () => {
 
     } catch (error) {
       console.log("Hủy chọn thư mục Addon:", error);
+    }
+  };
+
+  // HÀM MỚI: Mở cửa sổ chọn File (Dành cho Save File)
+  const uploadSaveFile = async () => {
+    try {
+      const [fileHandle] = await window.showOpenFilePicker({
+        types: [
+          {
+            description: 'Maidas Save Files',
+            accept: {
+              'application/json': ['.json'], // Cho phép file json
+              'text/plain': ['.txt']         // Cho phép file txt
+            },
+          },
+        ],
+        excludeAcceptAllOption: false,
+        multiple: false,
+      });
+      const file = await fileHandle.getFile();
+      
+      // Tạm thời log ra console để xác nhận đã bắt được file.
+      // Sau này mình sẽ viết logic đọc nội dung file rồi nhét vào Xưởng.
+      console.log("Tui đã tóm được file save của ông:", file.name);
+      alert(`Đã nạp thành công file save: ${file.name}`);
+
+    } catch (error) {
+      console.log("Ông vừa hủy chọn file save:", error);
     }
   };
 
@@ -101,7 +130,7 @@ const ProjectArchive = () => {
           </>
         )}
 
-        {/* Tab Recent & Pinned: Đã gỡ bỏ chữ RECENT PROJECTS và PINNED ITEMS */}
+        {/* Tab Recent & Pinned */}
         {(activeTab === 'Recent' || activeTab === 'Pinned') && (
           <>
             <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
@@ -113,9 +142,9 @@ const ProjectArchive = () => {
               </button>
             </div>
             
-            {/* Chỉ Tab Recent mới có thêm nút Upload ở bên phải */}
+            {/* ĐÃ CẮM DÂY ĐIỆN CHO NÚT NÀY: onClick={uploadSaveFile} */}
             {activeTab === 'Recent' && (
-              <button style={btnActionStyle(false)}>
+              <button onClick={uploadSaveFile} style={btnActionStyle(false)}>
                 UPLOAD SAVE FILE
               </button>
             )}
@@ -181,7 +210,6 @@ const headerStyle = { padding: '12px 20px', textAlign: 'left', color: 'rgba(255,
 const cellStyle = { padding: '12px 20px' };
 const emptyRowStyle = { textAlign: 'center', padding: '60px', color: 'rgba(255,255,255,0.3)' };
 
-// Nút Xanh Action (Dùng chung cho Upload Addon và Upload Save File)
 const btnActionStyle = (isConnected) => ({
   backgroundColor: isConnected ? 'transparent' : 'rgba(0, 150, 255, 0.2)',
   border: isConnected ? '1px solid rgba(255,255,255,0.3)' : '1px solid rgba(0, 150, 255, 0.5)',
@@ -190,14 +218,12 @@ const btnActionStyle = (isConnected) => ({
   fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', transition: 'all 0.2s'
 });
 
-// Nút Chính (NEW FACTORY)
 const btnPrimaryStyle = {
   backgroundColor: 'rgba(138, 180, 248, 0.15)', border: '1px solid #8ab4f8', color: '#8ab4f8',
   padding: '6px 15px', borderRadius: '4px', cursor: 'pointer',
   fontSize: '11px', fontWeight: 'bold', letterSpacing: '1px', transition: 'all 0.2s'
 };
 
-// Nút Phụ (OPEN)
 const btnSecondaryStyle = {
   backgroundColor: 'transparent', border: '1px solid rgba(255,255,255,0.3)', color: '#fff',
   padding: '6px 15px', borderRadius: '4px', cursor: 'pointer',
